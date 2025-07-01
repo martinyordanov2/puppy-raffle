@@ -16,11 +16,7 @@ contract PuppyRaffleTest is Test {
     uint256 duration = 1 days;
 
     function setUp() public {
-        puppyRaffle = new PuppyRaffle(
-            entranceFee,
-            feeAddress,
-            duration
-        );
+        puppyRaffle = new PuppyRaffle(entranceFee, feeAddress, duration);
     }
 
     //////////////////////
@@ -32,6 +28,38 @@ contract PuppyRaffleTest is Test {
         players[0] = playerOne;
         puppyRaffle.enterRaffle{value: entranceFee}(players);
         assertEq(puppyRaffle.players(0), playerOne);
+    }
+
+    function test_DenialOfService() public {
+        vm.txGasPrice(1 wei);
+        address[] memory players = new address[](100);
+        for (uint256 index = 0; index < 100; index++) {
+            players[index] = address(index);
+        }
+
+        //see how much gas it costs
+        uint256 gasStart = gasleft();
+        puppyRaffle.enterRaffle{value: entranceFee * players.length}(players);
+        uint256 gasEnd = gasleft();
+
+        uint256 gasUsedFirst = (gasStart - gasEnd) * tx.gasprice;
+        console.log("Gas cost of the first 100 players ", gasUsedFirst);
+
+        //second batch of players
+        address[] memory players2 = new address[](100);
+        for (uint256 index = 0; index < 100; index++) {
+            players2[index] = address(index + 100);
+        }
+
+        //see how much gas it costs
+        uint256 gasStart2 = gasleft();
+        puppyRaffle.enterRaffle{value: entranceFee * players2.length}(players2);
+        uint256 gasEnd2 = gasleft();
+
+        uint256 gasUsedSecond = (gasStart2 - gasEnd2) * tx.gasprice;
+        console.log("Gas cost of the second 100 players ", gasUsedSecond);
+
+        assert(gasUsedFirst < gasUsedSecond);
     }
 
     function testCantEnterWithoutPaying() public {
