@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.7.6;
+//@audit-info use of floating pragma is bad!
 
 import {ERC721} from "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
@@ -79,7 +80,7 @@ contract PuppyRaffle is ERC721, Ownable {
     function enterRaffle(address[] memory newPlayers) public payable {
         require(msg.value == entranceFee * newPlayers.length, "PuppyRaffle: Must send enough to enter raffle");
         for (uint256 i = 0; i < newPlayers.length; i++) {
-            // resetting the array?
+            // resetting the array -- delete players?
             players.push(newPlayers[i]);
         }
 
@@ -90,6 +91,7 @@ contract PuppyRaffle is ERC721, Ownable {
                 require(players[i] != players[j], "PuppyRaffle: Duplicate player");
             }
         }
+        // what if it is an empty array do we still emit the event?
         emit RaffleEnter(newPlayers);
     }
 
@@ -104,7 +106,7 @@ contract PuppyRaffle is ERC721, Ownable {
         //@audit reentrancy
         payable(msg.sender).sendValue(entranceFee);
 
-        players[playerIndex] = address(0); 
+        players[playerIndex] = address(0);
         emit RaffleRefunded(playerAddress);
     }
 
@@ -133,9 +135,13 @@ contract PuppyRaffle is ERC721, Ownable {
         require(players.length >= 4, "PuppyRaffle: Need at least 4 players");
         //@audit uses a weak PRNG
         uint256 winnerIndex =
-            uint256(keccak256(abi.encodePacked(msg.sender, block.timestamp, block.difficulty))) % players.length; 
+            uint256(keccak256(abi.encodePacked(msg.sender, block.timestamp, block.difficulty))) % players.length;
         address winner = players[winnerIndex];
         uint256 totalAmountCollected = players.length * entranceFee;
+        //@audit-info Usage of magic numbers
+        //uint256 public constant FEE_PERCENTAGE = 20; // 20% fee
+        //uint256 public constant PRIZE_POOL_PERCENTAGE = 80; // 80%
+        //uint256 public constant POOL_PRECISION = 100; // 100% precision
         uint256 prizePool = (totalAmountCollected * 80) / 100;
         uint256 fee = (totalAmountCollected * 20) / 100;
         //@audit integer overflow
@@ -143,9 +149,12 @@ contract PuppyRaffle is ERC721, Ownable {
         //@audit unsafe cast of uint256 to uint64
         totalFees = totalFees + uint64(fee);
 
+        //when we mint a new NFT, we use the totalSupply as the tokenId
         uint256 tokenId = totalSupply();
 
         // We use a different RNG calculate from the winnerIndex to determine rarity
+        //@audit weak RNG
+        //@auidt people can revert the TX till they win
         uint256 rarity = uint256(keccak256(abi.encodePacked(msg.sender, block.difficulty))) % 100;
         if (rarity <= COMMON_RARITY) {
             tokenIdToRarity[tokenId] = COMMON_RARITY;
@@ -155,9 +164,13 @@ contract PuppyRaffle is ERC721, Ownable {
             tokenIdToRarity[tokenId] = LEGENDARY_RARITY;
         }
 
-        delete players;
-        raffleStartTime = block.timestamp;
+        delete players; //restting the players array
+        raffleStartTime = block.timestamp; //resetting the raffle start time
         previousWinner = winner;
+
+        //possible reentrancy attack here
+        //what if the winner is a contract with a fallback that will fail? -- 
+        //@audit the winner wouldn't get the money if their fallback function reverts
         (bool success,) = winner.call{value: prizePool}("");
         require(success, "PuppyRaffle: Failed to send prize pool to winner");
         _safeMint(winner, tokenId);
@@ -166,9 +179,14 @@ contract PuppyRaffle is ERC721, Ownable {
     /// @notice this function will withdraw the fees to the feeAddress
     function withdrawFees() external {
         //note sends eth to arbitrary user
+        //@audit is it hard to withdraw fee is there are active players (MEV)?
+        //@audit mishandling of ETH
         require(address(this).balance == uint256(totalFees), "PuppyRaffle: There are currently players active!");
         uint256 feesToWithdraw = totalFees;
         totalFees = 0;
+         
+        //what if the feeAddress is a contract wuth a fallback that will fail?
+        //slither-disable-next-line arbitrary-send-eth
         (bool success,) = feeAddress.call{value: feesToWithdraw}("");
         require(success, "PuppyRaffle: Failed to withdraw fees");
     }
@@ -177,10 +195,12 @@ contract PuppyRaffle is ERC721, Ownable {
     /// @param newFeeAddress the new address to send fees to
     function changeFeeAddress(address newFeeAddress) external onlyOwner {
         feeAddress = newFeeAddress;
+        //q are events emitted in the rest of the contract?
         emit FeeAddressChanged(newFeeAddress);
     }
 
     /// @notice this function will return true if the msg.sender is an active player
+    // this isn't used anywhere?
     function _isActivePlayer() internal view returns (bool) {
         for (uint256 i = 0; i < players.length; i++) {
             if (players[i] == msg.sender) {
