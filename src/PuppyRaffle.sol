@@ -144,6 +144,7 @@ contract PuppyRaffle is ERC721, Ownable {
         //uint256 public constant POOL_PRECISION = 100; // 100% precision
         uint256 prizePool = (totalAmountCollected * 80) / 100;
         uint256 fee = (totalAmountCollected * 20) / 100;
+
         //@audit integer overflow
         //use a bigger uint and a newer version of solidity
         //@audit unsafe cast of uint256 to uint64
@@ -154,7 +155,7 @@ contract PuppyRaffle is ERC721, Ownable {
 
         // We use a different RNG calculate from the winnerIndex to determine rarity
         //@audit weak RNG
-        //@auidt people can revert the TX till they win
+        //@audit people can revert the TX untill they win
         uint256 rarity = uint256(keccak256(abi.encodePacked(msg.sender, block.difficulty))) % 100;
         if (rarity <= COMMON_RARITY) {
             tokenIdToRarity[tokenId] = COMMON_RARITY;
